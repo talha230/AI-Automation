@@ -71,3 +71,19 @@ def test_requirements_upstream_failure_is_502(client):
     resp = client.post("/requirements", json={"idea": "A tool-sharing app."})
     assert resp.status_code == 502
     assert resp.json()["error"] == "boom"
+
+
+def test_missing_credentials_surface_as_assistant_error():
+    """A non-APIError SDK failure (e.g. no credentials -> TypeError) must be
+    converted to AssistantError, not leak as an unhandled 500."""
+    from app.assistant import RequirementsAssistant
+    from app.config import Settings
+    from app.schemas import RequirementsRequest
+
+    assistant = RequirementsAssistant(Settings(anthropic_api_key=None))
+    # Simulate the SDK's "could not resolve authentication method" TypeError.
+    assistant._client.messages.parse = lambda **_: (_ for _ in ()).throw(
+        TypeError("Could not resolve authentication method.")
+    )
+    with pytest.raises(AssistantError):
+        assistant.generate(RequirementsRequest(idea="A tool-sharing app."))

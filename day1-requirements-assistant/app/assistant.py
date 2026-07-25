@@ -94,9 +94,22 @@ class RequirementsAssistant:
                 ],
                 output_format=RequirementsDocument,
             )
-        except anthropic.APIError as exc:  # network, auth, rate limit, 5xx, ...
+        except (anthropic.AnthropicError, ValueError, TypeError) as exc:
+            # anthropic.AnthropicError covers API failures (network, 401, rate
+            # limit, 5xx). The SDK also raises a plain TypeError when *no*
+            # credentials can be resolved at all, and a ValueError for some
+            # malformed requests it rejects before sending — catch those too so
+            # a missing key surfaces as a clean error, not an unhandled 500.
             logger.exception("Anthropic API call failed")
-            raise AssistantError(f"Requirements generation failed: {exc}") from exc
+            hint = ""
+            if not settings.has_api_key:
+                hint = (
+                    " (no ANTHROPIC_API_KEY configured — set it in the "
+                    "environment or run `ant auth login`)"
+                )
+            raise AssistantError(
+                f"Requirements generation failed: {exc}{hint}"
+            ) from exc
 
         # A safety refusal returns HTTP 200 with stop_reason == "refusal" and no
         # usable content — surface it rather than dereferencing empty output.
